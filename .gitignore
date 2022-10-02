@@ -1,0 +1,12 @@
+/node_modules
+
+.nyc_output
+coverage
+
+/js
+
+.pnpm-debug
+.pnpm-debug*
+logs
+
+.vscode
