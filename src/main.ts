@@ -165,7 +165,7 @@ export async function LoadBMSTable(url: string) {
 }
 
 function IsHTMLOrJSON(res: Response, resText: string): "html" | "json" {
-	const contentType = res.headers.get("X-Content-Type");
+	const contentType = res.headers.get("Content-Type");
 
 	// no content type? We gotta guess.
 	if (!contentType) {
