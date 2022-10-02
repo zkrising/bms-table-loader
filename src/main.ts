@@ -40,8 +40,10 @@ export interface BMSTableEntry {
 	/**
 	 * The folder this chart resides in. This property must be present, but might not be declared
 	 * as existing in the header.
+	 *
+	 * Some tables declare these as numbers instead of strings. Who knows why.
 	 */
-	level: string;
+	level: number | string;
 
 	/**
 	 * BMS Tables entries may - of course - have any kind of undocumented properties. As such, this type
@@ -91,7 +93,7 @@ export class BMSTable {
 const BODY_SCHEMA = z.array(
 	z.object({
 		md5: z.string(),
-		level: z.string(),
+		level: z.union([z.string(), z.number()]),
 	})
 );
 
@@ -113,13 +115,14 @@ export async function LoadBMSTable(url: string) {
 	const firstRes = await FetchWithRetry(url);
 	let headerJSON: BMSTableHead;
 	const resText = await firstRes.text();
+
 	const type = IsHTMLOrJSON(firstRes, resText);
 
 	let headerLocation: string;
 
 	if (type === "json") {
 		headerLocation = url;
-		headerJSON = JSON.parse(resText) as BMSTableHead;
+		headerJSON = BrokenBMSJSONParse(resText) as BMSTableHead;
 	} else {
 		const bmstable = ReadMetaTag(resText);
 
@@ -133,7 +136,7 @@ export async function LoadBMSTable(url: string) {
 		const headerJSONRes = await FetchWithRetry(headerLocation);
 
 		try {
-			headerJSON = (await headerJSONRes.json()) as BMSTableHead;
+			headerJSON = BrokenBMSJSONParse(await headerJSONRes.text()) as BMSTableHead;
 		} catch (err) {
 			throw new Error(`Failed to read header.json: ${err}.`);
 		}
@@ -150,7 +153,7 @@ export async function LoadBMSTable(url: string) {
 	let bodyJSON: Array<BMSTableEntry>;
 
 	try {
-		bodyJSON = (await body.json()) as Array<BMSTableEntry>;
+		bodyJSON = BrokenBMSJSONParse(await body.text()) as Array<BMSTableEntry>;
 	} catch (err) {
 		throw new Error(`Failed to read body.json: ${err}.`);
 	}
@@ -239,4 +242,31 @@ async function FetchWithRetry(url: string, options?: RequestInit, retryCount = 3
 	}
 
 	throw new Error(`Failed to fetch ${url}: ${lastRes.status}`);
+}
+
+/**
+ * Despite the fact that JSON is one of the simplest specifications in the world,
+ * and every single programming language has good support for it.
+ *
+ * The BMS Table authors still find themselves outputting completely invalid JSON.
+ * Honestly, I'm quite impressed. Or depressed.
+ *
+ * BOM is not legal in JSON.
+ * It's never been legal, it is BY SPECIFICATION not legal.
+ *
+ * RFC 7159, Section 8.1:
+ *     Implementations MUST NOT add a byte order mark to the beginning of a JSON text.
+ * This is put as clearly as it can be. This is the only "MUST NOT" in the entire RFC.
+ *
+ * Anyway. Some people are outputting json by raw string concatenation in PHP. This,
+ * for some unfathomable reason, results in byte-order-marks being sent over the wire.
+ */
+function BrokenBMSJSONParse(str: string) {
+	let cleanStr = str;
+
+	if (str.startsWith("\ufeff")) {
+		cleanStr = str.replace("\ufeff", "");
+	}
+
+	return JSON.parse(cleanStr) as unknown;
 }
