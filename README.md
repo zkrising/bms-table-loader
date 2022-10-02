@@ -26,17 +26,24 @@ const table = await Loader("http://nekokan.dyndns.info/~lobsak/genocide/insane.h
 // { head: ..., body: [...] }
 ```
 
-### Library
+There are also some utility methods defined on this object (it returns a class of `BMSTable`).
+
+### getLevelOrder()
+
+Returns the levels in this table in order. This is a utility method because there's
+three possible ways and places this can be defined in a BMS Table. Good fun.
+
+## Library
 
 We use [PNPM](https://pnpm.io) as our package manager. Use `pnpm install` to install dependencies.
 
-### Build Script
+## Build Script
 
 We use [TypeScript](https://typescriptlang.org). This means you have to run `pnpm build` to compile the library up into something usable by node.
 
 **NOTE**: This does not have to be done if running tests or if you use `ts-node`.
 
-### Tests
+## Tests
 
 To run the tests, use `pnpm test`.
 
