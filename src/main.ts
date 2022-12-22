@@ -31,12 +31,7 @@ export interface BMSTableHead {
 	[unknownProperty: string]: unknown;
 }
 
-export interface BMSTableEntry {
-	/**
-	 * The MD5 for this BMS chart.
-	 */
-	md5: string;
-
+interface BaseBMSTableEntry {
 	/**
 	 * The folder this chart resides in. This property must be present, but might not be declared
 	 * as existing in the header.
@@ -51,6 +46,24 @@ export interface BMSTableEntry {
 	 */
 	[unknownProperty: string]: unknown;
 }
+
+export interface BMSTableEntryMD5 extends BaseBMSTableEntry {
+	/**
+	 * The MD5 for this BMS chart. This may not be present, or may be the empty string/
+	 * an invalid MD5 entry. If this is the case, sha256 *must* be present.
+	 */
+	md5: string;
+}
+
+export interface BMSTableEntrySHA256 extends BaseBMSTableEntry {
+	/**
+	 * The SHA256 for this BMS chart. This is guaranteed to be present if the provided
+	 * MD5 is not exactly a 32 character string.
+	 */
+	sha256: string;
+}
+
+export type BMSTableEntry = BMSTableEntryMD5 & BMSTableEntrySHA256;
 
 export class BMSTable {
 	head: BMSTableHead;
@@ -89,13 +102,6 @@ export class BMSTable {
 		return levels;
 	}
 }
-
-const BODY_SCHEMA = z.array(
-	z.object({
-		md5: z.string(),
-		level: z.union([z.string(), z.number()]),
-	})
-);
 
 const HEAD_SCHEMA = z.object({
 	name: z.string(),
@@ -150,21 +156,94 @@ export async function LoadBMSTable(url: string) {
 
 	const bodyLocation = new URL(headerJSON.data_url, headerLocation).href;
 	const body = await FetchWithRetry(bodyLocation);
-	let bodyJSON: Array<BMSTableEntry>;
+	let rawBodyJSON: unknown;
 
 	try {
-		bodyJSON = BrokenBMSJSONParse(await body.text()) as Array<BMSTableEntry>;
+		rawBodyJSON = BrokenBMSJSONParse(await body.text()) as Array<BMSTableEntry>;
 	} catch (err) {
 		throw new Error(`Failed to read body.json: ${err}.`);
 	}
 
-	const bodyResult = BODY_SCHEMA.safeParse(bodyJSON);
-
-	if (!bodyResult.success) {
-		throw new Error(`Invalid body.json: ${bodyResult.error.toString()}.`);
-	}
+	// assert that this is *atleast* an array of objects.
+	const bodyJSON = ExtractBMSBody(rawBodyJSON);
 
 	return new BMSTable(headerJSON, bodyJSON);
+}
+
+const LEN_MD5_HEX_HASH = "d0f497c0f955e7edfb0278f446cdb6f8".length;
+const LEN_SHA256_HEX_HASH = "769359ebb55d3d6dff3b5c6a07ec03be9b87beda1ffb0c07d7ea99590605a732"
+	.length;
+
+/**
+ * There's no standard for the contents of a BMS table. There's a rough understanding
+ * that each object **must** contain a `level` field and a `md5` field, but recently
+ * people have been migrating their tables to use `sha256` instead of `md5`, sometimes
+ * leaving `md5` in a nonsensical/invalid sentinel value.
+ *
+ * This means we have to do all of this validation logic by hand.
+ *
+ * A cursory look at the beatoraja codebase shows that the table parser seems to
+ * discard any table entry it can't understand. As such, we need to do the same.
+ * "compatibility".
+ *
+ * @param rawData - Anything. Could be **ANY** json.parsed value.
+ */
+function ExtractBMSBody(rawData: unknown): Array<BMSTableEntry> {
+	if (!Array.isArray(rawData)) {
+		throw new Error(
+			`Invalid body.json -- got ${typeof rawData} (${rawData}) instead of an array.`
+		);
+	}
+
+	const bmsTableEntries: Array<BMSTableEntry> = [];
+
+	for (const entry of rawData) {
+		if (entry === null) {
+			// not an object
+			continue;
+		}
+
+		if (typeof entry !== "object" || Array.isArray(entry)) {
+			// not an object, or is an array
+			continue;
+		}
+
+		// we need to start doing arbitrary property access now.
+		const rec = entry as Record<string, unknown>;
+
+		if (typeof rec.level !== "number" && typeof rec.level !== "string") {
+			// the "level" property was not a number or string.
+			continue;
+		}
+
+		// if MD5 isn't a string, or if md5 cannot possibly be a valid md5
+		// hash (isn't 32 chars long)
+		// this is because to indicate that a table entry doesn't use md5
+		// sometimes people leave rec.md5 undefined, sometimes they set it to null
+		// and sometimes they set it to sentinel strings like "". This is ostensibly
+		// safe against idiots.
+		if (typeof rec.md5 !== "string" || rec.md5.length !== LEN_MD5_HEX_HASH) {
+			// then we **MUST** have sha256.
+
+			if (typeof rec.sha256 !== "string" || rec.sha256.length !== LEN_SHA256_HEX_HASH) {
+				// no md5, no sha256, this is nonsense.
+				continue;
+			}
+
+			// we have a valid sha256
+		} else {
+			// we have a valid md5
+			// (we may also have a valid sha256, but we don't need to check)
+			// we only guarantee that either md5 exists and is sensible
+			// or sha256 exists and is sensible
+		}
+
+		// it's gotta have level: string | number, and it's gotta have *atleast* one
+		// of sha256 or md5.
+		bmsTableEntries.push(entry as BMSTableEntry);
+	}
+
+	return bmsTableEntries;
 }
 
 function IsHTMLOrJSON(res: Response, resText: string): "html" | "json" {
@@ -245,10 +324,10 @@ async function FetchWithRetry(url: string, options?: RequestInit, retryCount = 3
 }
 
 /**
- * Despite the fact that JSON is one of the simplest specifications in the world,
- * and every single programming language has good support for it.
+ * Despite the fact that JSON is one of the simplest specifications in the world
+ * and every single programming language has good support for it...
  *
- * The BMS Table authors still find themselves outputting completely invalid JSON.
+ * ...BMS Table authors still find themselves outputting completely invalid JSON.
  * Honestly, I'm quite impressed. Or depressed.
  *
  * BOM is not legal in JSON.

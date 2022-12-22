@@ -31,6 +31,7 @@ t.test("lazy smoke tests", (t) => {
 			const res = await LoadBMSTable(tb); 
 
 			console.dir(res.getLevelOrder());
+			console.dir(res.body);
 		});
 	}
 	
