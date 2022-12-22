@@ -63,7 +63,24 @@ export interface BMSTableEntrySHA256 extends BaseBMSTableEntry {
 	sha256: string;
 }
 
-export type BMSTableEntry = BMSTableEntryMD5 | BMSTableEntrySHA256;
+export type RawBMSTableEntry = BMSTableEntryMD5 | BMSTableEntrySHA256;
+
+/**
+ * A wrapper for an entry in a BMS table's body.json that has the checksum already
+ * resolved for you.
+ */
+export interface BMSTableEntry {
+	/**
+	 * What checksum does this entry use, and what value is it?
+	 */
+	checksum: { type: "md5" | "sha256"; value: string };
+	/**
+	 * What's the actual content of this entry in the body.json? This guaranteeably
+	 * contains `level`, which may be a string or a number. It may also contain any
+	 * other property, with any value.
+	 */
+	content: RawBMSTableEntry;
+}
 
 export class BMSTable {
 	head: BMSTableHead;
@@ -94,8 +111,8 @@ export class BMSTable {
 		// This is a safe assumption, because this is what other tools do
 		// and therefore people write their tools to work under this assumption.
 		for (const chart of this.body) {
-			if (!levels.includes(chart.level)) {
-				levels.push(chart.level);
+			if (!levels.includes(chart.content.level)) {
+				levels.push(chart.content.level);
 			}
 		}
 
@@ -216,31 +233,21 @@ function ExtractBMSBody(rawData: unknown): Array<BMSTableEntry> {
 			continue;
 		}
 
-		// if MD5 isn't a string, or if md5 cannot possibly be a valid md5
-		// hash (isn't 32 chars long)
-		// this is because to indicate that a table entry doesn't use md5
-		// sometimes people leave rec.md5 undefined, sometimes they set it to null
-		// and sometimes they set it to sentinel strings like "". This is ostensibly
-		// safe against idiots.
-		if (typeof rec.md5 !== "string" || rec.md5.length !== LEN_MD5_HEX_HASH) {
-			// then we **MUST** have sha256.
+		let checksum;
 
-			if (typeof rec.sha256 !== "string" || rec.sha256.length !== LEN_SHA256_HEX_HASH) {
-				// no md5, no sha256, this is nonsense.
-				continue;
-			}
-
-			// we have a valid sha256
-		} else {
-			// we have a valid md5
-			// (we may also have a valid sha256, but we don't need to check)
-			// we only guarantee that either md5 exists and is sensible
-			// or sha256 exists and is sensible
+		try {
+			checksum = GetEntryChecksum(rec);
+		} catch {
+			// missing md5 and sha256. can't do anything with this.
+			continue;
 		}
 
 		// it's gotta have level: string | number, and it's gotta have *atleast* one
 		// of sha256 or md5.
-		bmsTableEntries.push(entry as BMSTableEntry);
+		bmsTableEntries.push({
+			checksum,
+			content: rec as RawBMSTableEntry,
+		});
 	}
 
 	return bmsTableEntries;
@@ -348,4 +355,36 @@ function BrokenBMSJSONParse(str: string) {
 	}
 
 	return JSON.parse(cleanStr) as unknown;
+}
+
+/**
+ * A table entry may use "sha256" or "md5" to identify itself. Due to complexities
+ * in determining which one is used, you should **always** use this function to get
+ * the checksum of a chart.
+ *
+ * In the case where a chart has both a valid md5 and sha256, md5 is preferred.
+ *
+ * Example complexities include these cases:
+ * { md5: "", sha256: valid_sha256_sum } <- should use sha256
+ * { md5: "null", sha256: valid_sha256_sum } <- should use sha256
+ * { sha256: valid_sha256_sum } <- should use sha256
+ *
+ * { md5: valid_md5_sum, sha256: [] } <- should use md5 (this is legal)
+ * { md5: valid_md5_sum, sha256: null } <- should use md5
+ * { md5: valid_md5_sum, sha256: valid_md5_sum } <- should use md5
+ * { md5: valid_md5_sum, sha256: "" } <- should use md5
+ * { md5: valid_md5_sum, sha256: "null" } <- should use md5
+ * { md5: valid_md5_sum } <- should use md5
+ */
+export function GetEntryChecksum(
+	entry: Record<string, unknown>
+): { type: "md5"; value: string } | { type: "sha256"; value: string } {
+	// if MD5 is a string and is exactly the length of an md5 checksum
+	if (typeof entry.md5 === "string" && entry.md5.length === LEN_MD5_HEX_HASH) {
+		return { type: "md5", value: entry.md5 };
+	} else if (typeof entry.sha256 === "string" && entry.sha256.length === LEN_SHA256_HEX_HASH) {
+		return { type: "sha256", value: entry.sha256 };
+	}
+
+	throw new Error(`Invalid table entry. Has no valid MD5 or SHA256?`);
 }

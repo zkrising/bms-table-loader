@@ -1,39 +1,28 @@
+import { GetEntryChecksum } from "./main";
 import t from "tap";
-import {LoadBMSTable} from "./main";
 
-export const tbls = [
-	"http://www.ribbit.xyz/bms/tables/insane.html",
-	"http://www.ribbit.xyz/bms/tables/normal.html",
-	"https://stellabms.xyz/st/table.html",
-	"https://stellabms.xyz/sl/table.html",
-	"https://rattoto10.github.io/second_table/insane_header.json",
-	"https://rattoto10.github.io/second_table/header.json",
-	"http://lr2.sakura.ne.jp/overjoy.php",
-	"http://dpbmsdelta.web.fc2.com/table/insane.html",
-	"http://dpbmsdelta.web.fc2.com/table/dpdelta.html",
-	"https://stellabms.xyz/dp/table.html",
-	"http://minddnim.web.fc2.com/sara/3rd_hard/bms_sara_3rd_hard.html",
-	"http://flowermaster.web.fc2.com/lrnanido/gla/LN.html",
-	"https://mqppppp.neocities.org/StardustTable.html",
-	"https://djkuroakari.github.io/starlighttable.html",
-	"https://notepara.com/glassist/lnoj",
-	"https://ladymade-star.github.io/luminous/",
-	"http://su565fx.web.fc2.com/Gachimijoy/gachimijoy.html",
-	"https://lets-go-time-hell.github.io/Delay-joy-table/",
-	"https://lets-go-time-hell.github.io/Arm-Shougakkou-table/",
-	"https://stellabms.xyz/fr/table.html",
-];
+const VALID_MD5 = "d0f497c0f955e7edfb0278f446cdb6f8";
+const VALID_SHA256 = "769359ebb55d3d6dff3b5c6a07ec03be9b87beda1ffb0c07d7ea99590605a732";
 
+t.test("#GetEntryChecksum", (t) => {
+	function test(obj: any, wanted: any) {
+		obj.level = "1";
 
-t.test("lazy smoke tests", (t) => {
-	for (const tb of tbls) {
-		t.test(`Load ${tb}.`, async (t) => {
-			const res = await LoadBMSTable(tb); 
-
-			console.dir(res.getLevelOrder());
-			console.dir(res.body);
-		});
+		t.strictSame(GetEntryChecksum(obj), wanted);
 	}
-	
-	t.end()
+
+	test({ md5: VALID_MD5 }, { type: "md5", value: VALID_MD5 });
+	test({ md5: VALID_MD5, sha256: null }, { type: "md5", value: VALID_MD5 });
+	test({ md5: VALID_MD5, sha256: "" }, { type: "md5", value: VALID_MD5 });
+	test({ md5: VALID_MD5, sha256: [] }, { type: "md5", value: VALID_MD5 });
+	test({ md5: VALID_MD5, sha256: {} }, { type: "md5", value: VALID_MD5 });
+
+	test({ sha256: VALID_SHA256 }, { type: "sha256", value: VALID_SHA256 });
+	test({ sha256: VALID_SHA256, md5: "" }, { type: "sha256", value: VALID_SHA256 });
+	test({ sha256: VALID_SHA256, md5: null }, { type: "sha256", value: VALID_SHA256 });
+	test({ sha256: VALID_SHA256, md5: "null" }, { type: "sha256", value: VALID_SHA256 });
+	test({ sha256: VALID_SHA256, md5: [] }, { type: "sha256", value: VALID_SHA256 });
+	test({ sha256: VALID_SHA256, md5: {} }, { type: "sha256", value: VALID_SHA256 });
+
+	t.end();
 });
