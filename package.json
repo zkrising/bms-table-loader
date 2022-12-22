@@ -1,6 +1,6 @@
 {
 	"name": "bms-table-loader",
-	"version": "1.1.1",
+	"version": "2.0.0",
 	"description": "A library for loading BMS tables from the internet.",
 	"main": "js/main.js",
 	"scripts": {
