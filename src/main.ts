@@ -118,6 +118,13 @@ export class BMSTable {
 
 		return levels;
 	}
+
+	/**
+	 * Retrieve the body.json without any checksum information.
+	 */
+	getRawBody() {
+		return this.body.map((e) => e.content);
+	}
 }
 
 const HEAD_SCHEMA = z.object({
