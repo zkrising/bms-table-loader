@@ -63,7 +63,7 @@ export interface BMSTableEntrySHA256 extends BaseBMSTableEntry {
 	sha256: string;
 }
 
-export type BMSTableEntry = BMSTableEntryMD5 & BMSTableEntrySHA256;
+export type BMSTableEntry = BMSTableEntryMD5 | BMSTableEntrySHA256;
 
 export class BMSTable {
 	head: BMSTableHead;
